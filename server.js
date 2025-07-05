@@ -13,6 +13,32 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
+app.post('/api/translate', async (req, res) => {
+  const { text, target } = req.body;
+
+  if (!text || !target) {
+    return res.status(400).json({ error: "Missing text or target language." });
+  }
+
+  try {
+    const response = await fetch('https://libretranslate.de/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: text,
+        source: 'en',
+        target,
+        format: 'text'
+      })
+    });
+
+    const data = await response.json();
+    res.json({ translatedText: data.translatedText });
+  } catch (err) {
+    console.error("❌ Translation error:", err);
+    res.status(500).json({ error: "Translation failed." });
+  }
+});
 
 app.post('/api/summarize', async (req, res) => {
   const { headlines } = req.body;

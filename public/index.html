@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>World News Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(255, 255, 255, 0.95);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.6em;
+      font-weight: bold;
+      color: #333;
+      z-index: 9999;
+      font-family: 'Segoe UI', sans-serif;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .commenttt {
+      text-align: center;
+      margin-top: 40px;
+    }
+    .buttonn {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .buttonn:hover {
+      background-color: #0056b3;
+    }
+    .comment {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-top: 15px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .like-btn {
+      background: none;
+      border: none;
+      color: #007bff;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    .like-btn:hover {
+      text-decoration: underline;
+    }
+    .reply-box {
+      margin-top: 10px;
+    }
+    .replies {
+      margin-top: 12px;
+      margin-left: 25px;
+      border-left: 2px solid #eee;
+      padding-left: 15px;
+    }
+    .replies .comment {
+      background-color: #f0f2f5;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading-overlay" style="display:none;">
+    Fetching global perspectives... 🌍📰
+  </div>
+  <div id="accessibility-controls">
+    <button onclick="toggleColorblindMode()">🎨 Toggle Colorblind Mode</button>
+    <button onclick="speakPage()">🗣️ Narrate Page</button>
+  </div>
+
+  <div id="controls">
+    <label>Enter Topic:</label><br>
+    <input type="text" id="topicInput" placeholder="e.g., Ukraine War"><br><br>
+    <button onclick="getNews()">Get News POV</button>
+  </div>
+
+  <div id="map"></div>
+  <div id="newsPanel" class="sidebar"></div>
+
+  <div id="newsView" style="display: none">
+    <div id="newsColumns">
+      <div class="column" id="misc-column"><h2>Misc</h2></div>
+      <div class="column" id="left-column"><h2>Left-wing (Liberal)</h2></div>
+      <div class="column" id="center-column"><h2>Center (Neutral)</h2></div>
+      <div class="column" id="right-column"><h2>Right-wing (Conservative)</h2></div>
+      <div class="column" id="local-column"><h2>Local</h2></div>
+      <div class="column" id="global-column"><h2>Global</h2></div>
+    </div>
+    <div style="text-align: center; margin-top: 20px;">
+    <button onclick="generateAndShowSummary()" style="padding: 10px 18px; font-size: 16px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer;">
+      📄 Show Summary
+    </button>
+  </div>
+  </div>
+
+
+<!-- Hidden Summary Page -->
+<div id="summaryPage" style="display: none; padding: 30px; max-width: 800px; margin: auto; background: #f9f9f9; border-radius: 10px;">
+  <h2 style="text-align: center;">🧠 News Summary</h2>
+  <p id="summaryText" style="font-size: 16px; line-height: 1.7;"></p>
+  <div style="text-align: center; margin-top: 20px;">
+    <button onclick="goBack()" style="padding: 8px 16px; font-size: 14px; background-color: #6c757d; color: white; border: none; border-radius: 6px;">← Back</button>
+  </div>
+</div>
+
+
+  <h2 class="commenttt">Comments</h2>
+  <div id="auth-section">
+    <button class="buttonn" onclick="login()">Login with Google</button>
+  </div>
+  <div id="comment-form" style="display: none;">
+    <textarea id="new-comment" placeholder="Write a comment..." style="width:100%;padding:10px;font-size:15px;border-radius:6px;"></textarea>
+    <button class="buttonn" onclick="postComment()">Post</button>
+  </div>
+  <div id="comments-container"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="biasmap.js"></script>
+  <script src="map.js"></script>
+  <script src="newscall.js"></script>
+  <script src="accessibility.js"></script>
+  <script src="splitNewsByBias.js"></script>
+  <script src="summary.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDHO0dxjI2Ph8n0lImqdK0YNXUtkothENY",
+      authDomain: "news-perspective.firebaseapp.com",
+      projectId: "news-perspective",
+      storageBucket: "news-perspective.appspot.com",
+      messagingSenderId: "648774331619",
+      appId: "1:648774331619:web:c72fc5bb9e6f147883a9d6",
+      measurementId: "G-57W6W2TY57"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    let currentUser = null;
+    const articleId = "sample-article";
+
+    window.login = async () => {
+      const provider = new GoogleAuthProvider();
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error) {
+        alert("Login error: " + error.message);
+        console.error("Login failed:", error);
+      }
+    };
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        document.getElementById("auth-section").style.display = "none";
+        document.getElementById("comment-form").style.display = "block";
+      }
+    });
+
+    window.postComment = async () => {
+      const text = document.getElementById("new-comment").value.trim();
+      if (!text || !currentUser) return;
+
+      const commentRef = collection(db, "comments", articleId, "main");
+      await addDoc(commentRef, {
+        text,
+        user: { id: currentUser.uid, name: currentUser.displayName },
+        likes: 0,
+        timestamp: serverTimestamp()
+      });
+
+      document.getElementById("new-comment").value = "";
+    };
+
+    const loadComments = () => {
+      const commentRef = collection(db, "comments", articleId, "main");
+      const q = query(commentRef, orderBy("timestamp", "desc"));
+      const container = document.getElementById("comments-container");
+
+      onSnapshot(q, (snapshot) => {
+        container.innerHTML = "";
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const commentDiv = document.createElement("div");
+          commentDiv.className = "comment";
+          let replyButtonHTML = !currentUser || currentUser.uid !== data.user.id ? `
+            <button class="buttonn" onclick="toggleReplyBox('${docSnap.id}')">Reply</button>
+            <div id="reply-box-${docSnap.id}" class="reply-box" style="display:none;">
+              <textarea id="reply-input-${docSnap.id}" placeholder="Write a reply..."></textarea>
+              <button onclick="postReply('${docSnap.id}')">Post Reply</button>
+            </div>` : "";
+
+          commentDiv.innerHTML = `
+            <strong>${data.user.name}</strong><br>
+            ${data.text}<br>
+            <button class="like-btn" onclick="likeComment('${docSnap.id}')">❤️ ${data.likes || 0}</button>
+            ${replyButtonHTML}
+            <div id="replies-${docSnap.id}" class="replies"></div>`;
+
+          container.appendChild(commentDiv);
+          loadReplies(docSnap.id);
+        });
+      });
+    };
+
+    window.toggleReplyBox = (commentId) => {
+      const box = document.getElementById(`reply-box-${commentId}`);
+      box.style.display = box.style.display === "none" ? "block" : "none";
+    };
+
+    window.postReply = async (commentId) => {
+      const text = document.getElementById(`reply-input-${commentId}`).value.trim();
+      if (!text || !currentUser) return;
+
+      const replyRef = collection(db, "comments", articleId, "main", commentId, "replies");
+      await addDoc(replyRef, {
+        text,
+        user: { id: currentUser.uid, name: currentUser.displayName },
+        timestamp: serverTimestamp()
+      });
+
+      document.getElementById(`reply-input-${commentId}`).value = "";
+      document.getElementById(`reply-box-${commentId}`).style.display = "none";
+    };
+
+    const loadReplies = (commentId) => {
+      const replyRef = collection(db, "comments", articleId, "main", commentId, "replies");
+      const q = query(replyRef, orderBy("timestamp", "asc"));
+      const container = document.getElementById(`replies-${commentId}`);
+
+      onSnapshot(q, (snapshot) => {
+        container.innerHTML = "";
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const replyDiv = document.createElement("div");
+          replyDiv.className = "comment";
+          replyDiv.innerHTML = `<strong>${data.user.name}</strong><br>${data.text}`;
+          container.appendChild(replyDiv);
+        });
+      });
+    };
+
+    window.likeComment = async (commentId) => {
+      if (!currentUser) return;
+      const commentRef = doc(db, "comments", articleId, "main", commentId);
+      await updateDoc(commentRef, { likes: increment(1) });
+    };
+
+    loadComments();
+  </script>
+</body>
+</html>
